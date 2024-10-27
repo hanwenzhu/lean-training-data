@@ -4,6 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Scott Morrison
 -/
 import Lean.Elab.Frontend
+import Lean.Util.Paths
+import Batteries.Lean.Util.Path -- Note: this is Lean.Util.Path later Lean versions
 import Batteries.Data.MLList.Basic
 
 /-!
@@ -230,9 +232,19 @@ def processInput (input : String) (env? : Option Environment := none)
 
 open System
 
--- TODO allow finding Lean 4 sources from the toolchain.
+/-- Parallel to compile_time_search_path% -/
+elab "compile_time_src_search_path%" : term =>
+  return toExpr (← initSrcSearchPath)
+
 def findLean (mod : Name) : IO FilePath := do
-  return FilePath.mk ((← findOLean mod).toString.replace ".lake/build/lib/" "") |>.withExtension "lean"
+  let srcSearchPath : SearchPath := compile_time_src_search_path%
+  if let some fname ← srcSearchPath.findModuleWithExt "lean" mod then
+    return fname
+  else
+    let fname := FilePath.mk ((← findOLean mod).toString.replace ".lake/build/lib/" "") |>.withExtension "lean"
+    if !(← fname.pathExists) then
+      throw <| IO.userError s!"Path to {mod} not found"
+    return fname
 
 /-- Implementation of `moduleSource`, which is the cached version of this function. -/
 def moduleSource' (mod : Name) : IO String := do
